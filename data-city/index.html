@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data City</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: full-bleed night city in WebGL; glass instrument panels pinned to the screen edges (inspector right, radio + controls left) */
+:root{
+  color-scheme:dark;
+  --bg:#080b16;
+  --panel:rgba(13,18,35,.88);
+  --panel-solid:#10162a;
+  --line:#252f4c;
+  --fg:#e3e9f6;
+  --muted:#8b96b3;
+  --accent:#ffb547;
+  --data:#5ad1e6;
+  --ok:#4ade80; --warn:#fbbf24; --crit:#ff5d6c;
+  --f-display:"Chakra Petch","Barlow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --barH:64px;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;overflow:hidden}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+button{font:inherit;color:inherit}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+
+.bar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  background:linear-gradient(to bottom,rgba(8,11,22,.95) 40%,rgba(8,11,22,0))}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.mark{display:flex;align-items:flex-end;gap:2px;height:26px}
+.mark i{display:block;width:6px;background:var(--accent);border-radius:1px}
+.mark i:nth-child(1){height:12px;opacity:.6}.mark i:nth-child(2){height:26px}.mark i:nth-child(3){height:18px;background:var(--data)}
+h1{margin:0;font:700 20px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase}
+.sub{margin:4px 0 0;font:500 12px/1.2 var(--f-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+.sub b{color:var(--fg);font-weight:600}
+#cityStatus.warn{color:var(--warn)} #cityStatus.crit{color:var(--crit)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.btn{font:500 13px/1 var(--f-body);letter-spacing:.02em;padding:8px 12px;border:1px solid var(--line);background:var(--panel-solid);border-radius:7px;cursor:pointer;white-space:nowrap;color:var(--fg)}
+.btn:hover{border-color:#3a4670}
+.btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,.chip:focus-visible,input:focus-visible,.x:focus-visible,label.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg .btn{border:0;border-radius:0;padding:8px 10px;font-family:var(--f-mono);font-size:12px}
+.seg .btn+.btn{border-left:1px solid var(--line)}
+
+#inspector{position:fixed;z-index:4;top:var(--barH);right:max(12px,env(safe-area-inset-right,0px));width:340px;max-height:calc(100% - var(--barH) - 12px - env(safe-area-inset-bottom,0px));overflow:auto;padding:16px}
+.i-head{display:flex;gap:12px;align-items:flex-start}
+.sw{width:12px;height:36px;border-radius:2px;flex:none;margin-top:2px}
+.i-titles{flex:1;min-width:0}
+.i-titles h2{margin:0;font:600 20px/1.15 var(--f-display);letter-spacing:.04em;text-wrap:balance;overflow-wrap:anywhere}
+.i-titles p{margin:4px 0 0;color:var(--muted);font-size:13px;line-height:1.35}
+.x{background:none;border:1px solid transparent;color:var(--muted);font-size:20px;line-height:1;width:30px;height:30px;border-radius:6px;cursor:pointer;flex:none}
+.x:hover{border-color:var(--line);color:var(--fg)}
+.pill{display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:4px 9px;border-radius:99px;font:600 11px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;border:1px solid currentColor}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.ok{color:var(--ok)}.pill.warn{color:var(--warn)}.pill.crit{color:var(--crit)}
+.pill-note{color:var(--muted);font-size:13px;margin-left:8px}
+.metric{margin-top:14px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.metric .lab{width:100%;font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);overflow-wrap:anywhere}
+.metric .val{font:600 32px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.delta{font:600 12px/1 var(--f-mono)}
+.delta.up{color:var(--ok)}.delta.down{color:var(--crit)}.delta.flat{color:var(--muted)}
+#iChart{display:block;width:100%;height:120px;margin-top:12px}
+.rows{margin:14px 0 0;display:grid;grid-template-columns:1fr auto;gap:7px 12px;font-size:13px}
+.rows dt{color:var(--muted)}.rows dd{margin:0;font:500 13px/1.2 var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+.sec{margin:18px 0 8px;font:600 11px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.links{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.links li{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:baseline;font-size:13px}
+.links .what{color:var(--muted);grid-column:2;min-width:0;overflow-wrap:anywhere}
+.insight{margin:16px 0 0;padding:12px;border-radius:8px;background:rgba(90,209,230,.07);border:1px solid rgba(90,209,230,.22);line-height:1.45;font-size:13.5px}
+.insight b{color:var(--data);font-weight:600}
+
+#left{position:fixed;z-index:4;top:var(--barH);bottom:calc(12px + env(safe-area-inset-bottom,0px));left:max(12px,env(safe-area-inset-left,0px));width:310px;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+#left>*{pointer-events:auto}
+#radio{flex:0 1 auto;min-height:0;display:flex;flex-direction:column;padding:14px 0 6px}
+#radio h2,#dock h2{margin:0;font:600 13px/1 var(--f-display);letter-spacing:.16em;text-transform:uppercase}
+.r-head{display:flex;justify-content:space-between;align-items:center;padding:0 14px 10px;border-bottom:1px solid var(--line)}
+.live{font:500 11px/1 var(--f-mono);color:var(--muted);display:flex;align-items:center;gap:6px}
+.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--crit);animation:blink 1.4s infinite}
+@keyframes blink{50%{opacity:.25}}
+#log{list-style:none;margin:0;padding:6px 14px;overflow:auto;min-height:0;flex:1}
+#log li{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;padding:7px 0;border-bottom:1px solid rgba(37,47,76,.55);font-size:13px;line-height:1.3}
+#log li:last-child{border-bottom:0}
+#log .d{font:500 11px/1.5 var(--f-mono);color:var(--muted);grid-row:span 2;white-space:nowrap;min-width:30px}
+#log .route{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0}
+#log .ar{color:var(--muted);font-size:11px}
+#log .t{min-width:0;overflow-wrap:anywhere}
+#log li.warn .t{color:var(--warn)}#log li.crit .t{color:var(--crit)}#log li.anom .t,#log li.what .t{color:var(--data)}
+.chip{--c:#888;display:inline-flex;align-items:center;gap:5px;max-width:150px;padding:2px 7px 2px 6px;border-radius:5px;border:1px solid color-mix(in srgb,var(--c) 45%,transparent);background:color-mix(in srgb,var(--c) 12%,transparent);font:600 11px/1.3 var(--f-mono);letter-spacing:.03em;cursor:pointer;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip::before{content:"";flex:none;width:6px;height:6px;border-radius:1px;background:var(--c)}
+#dock{flex:none;margin-top:auto;padding:14px}
+.ds{margin:8px 0 0;font:500 12px/1.4 var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
+.ds b{color:var(--fg)}
+.ctl{display:grid;gap:6px;margin-top:14px}
+.ctl label{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}
+.ctl output{font:600 12px/1.4 var(--f-mono);color:var(--fg);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.shocks{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:14px}
+.shocks .btn{text-align:left;padding:9px 10px;line-height:1.2;white-space:normal}
+.shocks .btn small{display:block;color:var(--muted);font:400 11px/1.3 var(--f-mono);margin-top:3px}
+.shocks .btn.on{border-color:var(--warn);color:var(--warn)}
+.shocks .wide{grid-column:1/-1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.note{margin:12px 0 0;color:var(--muted);font-size:12.5px;line-height:1.4}
+.note.err{color:var(--warn)}
+
+#rideHud{position:fixed;z-index:4;left:50%;transform:translateX(-50%);top:calc(var(--barH) + 4px);padding:8px 14px;font:500 13px/1.3 var(--f-mono);display:flex;gap:10px;align-items:center;max-width:calc(100% - 32px)}
+#rideHud .t{min-width:0}
+.hint{position:fixed;z-index:3;bottom:calc(14px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);font:500 12px/1 var(--f-mono);color:var(--muted);letter-spacing:.04em;white-space:nowrap;pointer-events:none}
+@media (max-width:1100px){.hint{display:none}}
+@media (max-width:760px){
+  #inspector,#left{left:max(8px,env(safe-area-inset-left,0px));right:max(8px,env(safe-area-inset-right,0px));width:auto;top:auto;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52%}
+  #left{max-height:58%}
+  #radio{flex:1 1 auto}
+  #dock{overflow:auto}
+  h1{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){.live::before{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="scene" tabindex="0" aria-label="3D city where each building is a live dashboard. Click a building to inspect it."></canvas>
+
+<header class="bar" id="bar">
+  <div class="brand">
+    <div class="mark" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div>
+      <h1>Data City</h1>
+      <p class="sub"><span id="clock">Day <b>0</b></span> · <span id="cityStatus">All districts normal</span></p>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="playBtn" aria-pressed="false">Pause</button>
+    <div class="seg" role="group" aria-label="Playback speed">
+      <button class="btn" data-speed="1" aria-pressed="true">1×</button>
+      <button class="btn" data-speed="2" aria-pressed="false">2×</button>
+      <button class="btn" data-speed="4" aria-pressed="false">4×</button>
+      <button class="btn" data-speed="8" aria-pressed="false">8×</button>
+    </div>
+    <button class="btn" id="tourBtn" aria-pressed="false">Tour</button>
+    <button class="btn" id="rideBtn" aria-pressed="false">Ride a packet</button>
+    <button class="btn" id="radioBtn" aria-pressed="true">Radio</button>
+    <button class="btn" id="dockBtn" aria-pressed="true">Controls</button>
+  </div>
+</header>
+
+<aside id="inspector" class="panel" aria-label="Building inspector">
+  <div class="i-head">
+    <span class="sw" id="iSw"></span>
+    <div class="i-titles"><h2 id="iName">Data Lake</h2><p id="iRole"></p></div>
+    <button class="x" id="iClose" aria-label="Close inspector">×</button>
+  </div>
+  <div id="iTop"></div>
+  <canvas id="iChart" aria-label="Trend chart for the selected building"></canvas>
+  <div id="iBottom"></div>
+</aside>
+
+<div id="left">
+  <section id="radio" class="panel" aria-label="City radio: messages between districts">
+    <div class="r-head"><h2>City radio</h2><span class="live">live</span></div>
+    <ul id="log"></ul>
+  </section>
+  <section id="dock" class="panel" aria-label="Controls">
+    <div id="dockDemo">
+      <h2>Demo scenarios</h2>
+      <div class="ctl">
+        <label for="spend">Marketing spend <output id="spendOut">$20k/day</output></label>
+        <input type="range" id="spend" min="5" max="50" step="1" value="20">
+      </div>
+      <div class="ctl">
+        <label for="price">Unit price <output id="priceOut">$100</output></label>
+        <input type="range" id="price" min="60" max="160" step="5" value="100">
+      </div>
+      <div class="shocks">
+        <button class="btn" id="viralBtn">Viral campaign<small>8 days · 2.2× leads</small></button>
+        <button class="btn" id="delayBtn">Supplier delay<small>12 days · 35% capacity</small></button>
+        <button class="btn" id="outageBtn">Site outage<small>4 days · ticket surge</small></button>
+        <button class="btn" id="resetBtn">Reset city<small>back to day 45</small></button>
+        <label class="btn wide" for="csvIn">Build a city from a CSV<small>Each numeric column becomes a building</small><input type="file" id="csvIn" class="sr" accept=".csv,text/csv"></label>
+      </div>
+      <p class="note" id="demoNote">This is a sample business. Load a CSV to map your own data.</p>
+    </div>
+    <div id="dockData" hidden>
+      <h2>Your data</h2>
+      <p class="ds" id="dsInfo"></p>
+      <div class="ctl">
+        <label for="scrub">Playback position <output id="scrubOut"></output></label>
+        <input type="range" id="scrub" min="0" max="100" step="1" value="0">
+      </div>
+      <div class="shocks">
+        <button class="btn" id="shockUp">What-if +20%<small id="shockSub">Select a building</small></button>
+        <button class="btn" id="shockDown">What-if −20%<small>Same building, cut</small></button>
+        <label class="btn" for="csvIn2">Load another CSV<small>Replaces this city</small><input type="file" id="csvIn2" class="sr" accept=".csv,text/csv"></label>
+        <button class="btn" id="demoBtn">Demo city<small>Back to the sample</small></button>
+      </div>
+      <p class="note">Roads are correlations of |r| ≥ 0.4 found in the data. Packets travel from the column that moves first.</p>
+    </div>
+  </section>
+</div>
+
+<div id="rideHud" class="panel" hidden><span class="t" id="rideText">Waiting for a packet…</span><button class="btn" id="rideExit">Exit</button></div>
+<p class="hint">Drag to orbit · Scroll to zoom · WASD to walk · Click a building</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const css = getComputedStyle(document.documentElement);
+const T = k => css.getPropertyValue(k).trim();
+const COL = {fg:T('--fg'),muted:T('--muted'),data:T('--data'),ok:T('--ok'),warn:T('--warn'),crit:T('--crit')};
+const STATUS_HEX = {ok:0x4ade80, warn:0xfbbf24, crit:0xff5d6c};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- maths & formatting ---------- */
+const fmtI = v => Math.round(v).toLocaleString('en-US');
+const usd = v => { const s = v < 0 ? '−$' : '$', a = Math.abs(v); return a >= 1e6 ? s+(a/1e6).toFixed(2)+'M' : s+(a/1e3).toFixed(1)+'k'; };
+const pct = v => v.toFixed(1)+'%';
+const num = v => { if(!isFinite(v)) return '—'; const a = Math.abs(v), s = v<0?'−':''; if(a>=1e9) return s+(a/1e9).toFixed(2)+'B'; if(a>=1e6) return s+(a/1e6).toFixed(2)+'M'; if(a>=1e4) return s+(a/1e3).toFixed(1)+'k'; if(a>=100) return s+Math.round(a).toLocaleString('en-US'); if(a>=1) return s+a.toFixed(2); if(a===0) return '0'; return s+a.toPrecision(3); };
+const FMT = {int:fmtI, usd, pct, num};
+const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+const std = a => { const m = mean(a); return Math.sqrt(mean(a.map(x=>(x-m)**2))); };
+function corr(x,y){ const mx=mean(x), my=mean(y); let n=0,dx=0,dy=0; for(let i=0;i<x.length;i++){ n+=(x[i]-mx)*(y[i]-my); dx+=(x[i]-mx)**2; dy+=(y[i]-my)**2; } return dx&&dy ? n/Math.sqrt(dx*dy) : 0; }
+function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`; }
+function holt(st,y){ if(st.l==null){ st.l=y; st.b=0; return; } const l = .4*y + .6*(st.l+st.b); st.b = .2*(l-st.l) + .8*st.b; st.l = l; }
+function holtForecast(series, h){ const st={l:null,b:0}; series.forEach(v=>holt(st,v)); const out=[]; for(let k=1;k<=h;k++) out.push(st.l + k*st.b); return out; }
+function rollingZ(arr, i, n=20){ if(i < n) return 0; const w = arr.slice(i-n, i), sd = std(w); return sd < 1e-9 ? 0 : (arr[i]-mean(w))/sd; }
+
+let seed = 11;
+const rnd = () => (seed = (seed*16807)%2147483647, (seed-1)/2147483646);
+const noise = a => 1 + (rnd()+rnd()+rnd()-1.5)*a;
+
+/* =====================================================================
+   MODEL 1 · Demo business (simulated, causally linked districts)
+   ===================================================================== */
+function makeDemoModel(){
+  const defs = {
+    lake:{name:'Data Lake',short:'Lake',role:'Central warehouse. Every district streams its events here.',color:'#5ad1e6',metric:'Records / day',fmt:'int',key:'records',style:'dome',foot:11,range:[3,10]},
+    mkt:{name:'Marketing Tower',short:'Mktg',role:'Campaign spend and lead generation.',color:'#f472b6',metric:'Leads / day',fmt:'int',key:'leads',style:'antenna',foot:8,range:[12,32]},
+    sales:{name:'Sales HQ',short:'Sales',role:'Turns leads into orders and revenue.',color:'#ff9f43',metric:'Revenue / day',fmt:'usd',key:'revenue',style:'twin',foot:10,range:[10,28]},
+    fin:{name:'Finance Bank',short:'Finance',role:'Cash, costs and margin.',color:'#4ade80',metric:'Cash balance',fmt:'usd',key:'cash',style:'bank',foot:10,range:[6,14]},
+    ai:{name:'Forecast Lab',short:'Lab',role:'Forecasting, lag analysis and demand planning.',color:'#a78bfa',metric:'Forecast accuracy',fmt:'pct',key:'acc',style:'lab',foot:9,range:[12,24]},
+    ops:{name:'Operations Plant',short:'Ops',role:'Production against plant capacity.',color:'#94a3b8',metric:'Capacity used',fmt:'pct',key:'util',style:'plant',foot:10,range:[5,11]},
+    inv:{name:'Inventory Depot',short:'Depot',role:'Stock on hand and order fulfilment.',color:'#60a5fa',metric:'Units in stock',fmt:'int',key:'stock',style:'depot',foot:10,range:[4,9]},
+    sup:{name:'Support Center',short:'Support',role:'Tickets, backlog and customer satisfaction.',color:'#fde047',metric:'CSAT',fmt:'pct',key:'csat',style:'dish',foot:8,range:[8,22]},
+  };
+  const ring = ['mkt','sales','fin','ai','ops','inv','sup'];
+  const flows = [
+    ['mkt','sales','leads'],['sales','fin','revenue'],['sales','inv','orders'],['inv','ops','reorder'],['ops','inv','restock'],
+    ['sales','sup','new customers'],['sup','mkt','satisfaction'],['fin','mkt','budget'],
+    ['lake','ai','training data'],['ai','fin','forecast'],['ai','ops','demand plan'],
+  ];
+  const edges = [...flows, ...['mkt','sales','fin','ops','inv','sup'].map(id=>[id,'lake','events'])].map(([from,to,label])=>({from,to,label}));
+  let S, hist;
+  const push = (k,v) => { (hist[k] || (hist[k]=[])).push(v); if(hist[k].length>120) hist[k].shift(); };
+  const fc7 = () => { let s=0; for(let h=1;h<=7;h++) s += Math.max(0,S.hRev.l + h*S.hRev.b); return s; };
+  function bestLag(a,b){
+    const N = Math.min(40, a.length-6); if(N<12) return {lag:2,r:0};
+    let best = {lag:0,r:-2};
+    for(let L=0;L<=5;L++){ const x=[],y=[]; for(let i=b.length-N;i<b.length;i++){ x.push(a[i-L]); y.push(b[i]); } const r=corr(x,y); if(r>best.r) best={lag:L,r}; }
+    return best;
+  }
+  function step(){
+    const s = S; s.day++;
+    const viral = s.viral>0; if(viral) s.viral--;
+    const delay = s.delay>0; if(delay) s.delay--;
+    const outage = s.outage>0; if(outage) s.outage--;
+    const pen = Math.max(0,(82-s.csat))*0.012;
+    const leads = Math.round(55*Math.sqrt(s.spend)*(viral?2.2:1)*(1-pen)*noise(.16));
+    s.leadQ.push(leads); if(s.leadQ.length>5) s.leadQ.shift();
+    const lagged = s.leadQ.length>=3 ? s.leadQ[s.leadQ.length-3] : leads;
+    const conv = 0.16*Math.pow(100/s.price,1.3);
+    const deals = Math.max(0,Math.round(lagged*conv*noise(.16)));
+    const U = 12;
+    const fulfilled = Math.min(deals, Math.floor(s.stock/U));
+    const lost = deals - fulfilled;
+    s.stock -= fulfilled*U;
+    const revenue = fulfilled*U*s.price;
+    const predRev = s.hRev.l==null ? revenue : s.hRev.l + s.hRev.b;
+    holt(s.hRev, revenue); holt(s.hUnits, deals*U);
+    s.plan = Math.max(0, s.hUnits.l + s.hUnits.b);
+    if(revenue>0){ s.ape.push(Math.abs(revenue-predRev)/revenue); if(s.ape.length>14) s.ape.shift(); }
+    const acc = Math.max(0, 100 - mean(s.ape)*100);
+    const CAP = 800, cap = CAP*(delay?0.35:1);
+    const need = s.plan + (5*s.plan - s.stock)*0.3;
+    const production = Math.round(Math.min(cap, Math.max(0,need)*noise(.04)));
+    s.stock += production;
+    const util = production/CAP*100;
+    const tickets = Math.max(0,Math.round(fulfilled*0.35 + lost*0.8 + (outage?220:0) + 10*noise(.3)));
+    s.backlog = Math.max(0, s.backlog + tickets - 60);
+    const lostRatio = deals ? lost/deals : 0;
+    const csatT = Math.max(35, Math.min(98, 96 - s.backlog*0.06 - lostRatio*25));
+    s.csat = s.csat*0.7 + csatT*0.3;
+    const cost = s.spend*1000 + production*30 + 9000;
+    const profit = revenue - cost; s.cash += profit;
+    const records = Math.round((leads + deals*6 + tickets*4 + production*0.5 + 300)*noise(.06));
+    s.totalRecords += records;
+    Object.assign(s.last,{leads,deals,fulfilled,lost,revenue,production,cap,util,tickets,profit,cost,records,conv,acc,pen});
+    push('leads',leads); push('revenue',revenue); push('cash',s.cash); push('profit',profit); push('acc',acc);
+    push('util',util); push('stock',s.stock); push('csat',s.csat); push('records',records); push('tickets',tickets); push('lost',lost);
+    if(s.day%5===0) s.lag = bestLag(hist.leads, hist.revenue);
+  }
+  const PAY = {
+    'mkt>sales': L=>`${fmtI(L.leads)} leads handed off`,
+    'sales>fin': L=>`${usd(L.revenue)} booked`,
+    'sales>inv': L=>`${fmtI(L.fulfilled*12)} units picked`,
+    'inv>ops': L=>`${fmtI(S.stock)} on hand · need ${fmtI(S.plan)}/day`,
+    'ops>inv': L=>`${fmtI(L.production)} units restocked`,
+    'sales>sup': L=>`${fmtI(L.fulfilled)} new customers onboarded`,
+    'sup>mkt': L=>`CSAT ${S.csat.toFixed(1)}%${L.pen>0.03?' · churn risk rising':''}`,
+    'fin>mkt': L=>`Budget $${S.spend}k/day approved`,
+    'lake>ai': L=>`${fmtI(L.records)} records for retraining`,
+    'ai>fin': L=>`7-day revenue forecast ${usd(fc7())}`,
+    'ai>ops': L=>`Demand plan ${fmtI(S.plan)} units/day`,
+    'mkt>lake': L=>`${fmtI(L.leads)} lead events`,
+    'sales>lake': L=>`${fmtI(L.lost+L.fulfilled)} order events`,
+    'fin>lake': L=>`Ledger posted (${usd(L.profit)} net)`,
+    'ops>lake': L=>`${fmtI(L.production)} production events`,
+    'inv>lake': L=>`Stock snapshot ${fmtI(S.stock)}`,
+    'sup>lake': L=>`${fmtI(L.tickets)} ticket events`,
+  };
+  const ANOM = {mkt:'leads', sales:'revenue', sup:'tickets', lake:'records', ops:'util'};
+  const lastAnom = {};
+  const M = {
+    kind:'demo', defs, ring, hub:'lake', edges,
+    reset(){
+      seed = 11; hist = {};
+      S = {day:0,spend:+$('#spend').value,price:+$('#price').value,viral:0,delay:0,outage:0,stock:2600,cash:250000,backlog:30,csat:93,
+           leadQ:[],hRev:{l:null,b:0},hUnits:{l:null,b:0},ape:[],plan:470,totalRecords:0,lag:{lag:2,r:0},last:{}};
+      for(let i=0;i<45;i++) step();
+      for(const k in lastAnom) delete lastAnom[k];
+    },
+    step,
+    stamp(){ return `D${S.day}`; },
+    clock(){ return `Day <b>${S.day}</b>`; },
+    series(id){ return hist[defs[id].key] || []; },
+    fmt(id,v){ return FMT[defs[id].fmt](v); },
+    forecast(id){ if(id!=='sales') return []; const o=[]; for(let k=1;k<=7;k++) o.push(Math.max(0,S.hRev.l + k*S.hRev.b)); return o; },
+    xLabel(back){ return `D${S.day-back}`; },
+    xLabelAhead(h){ return `D${S.day+h}`; },
+    payload(e){ return (PAY[e.from+'>'+e.to]||(()=>e.label))(S.last); },
+    status(){
+      const L = S.last, st = {};
+      st.mkt = L.pen>0.03 ? ['warn',`Low CSAT is costing ${Math.round(L.pen*100)}% of leads`] : S.viral>0 ? ['ok',`Viral campaign · ${S.viral} days left`] : ['ok','Lead flow steady'];
+      st.sales = L.lost>0 ? ['warn',`${L.lost} orders lost to stockouts`] : ['ok','All orders fulfilled'];
+      const p7 = mean(hist.profit.slice(-7));
+      st.fin = S.cash<0 ? ['crit','Cash is negative'] : p7<0 ? ['warn','Losing money on 7-day average'] : ['ok','Profitable on 7-day average'];
+      st.ai = L.acc<80 ? ['warn','Forecast drifting from actuals'] : ['ok','Forecast tracking actuals'];
+      st.ops = S.delay>0 ? ['warn',`Supplier delay · ${S.delay} days left`] : L.util>97 ? ['warn','Running at full capacity'] : ['ok','Capacity available'];
+      const cover = S.stock/Math.max(1,S.plan);
+      st.inv = cover<1 ? ['crit','Stockout risk today'] : cover<2.5 ? ['warn',`${cover.toFixed(1)} days of cover`] : ['ok',`${cover.toFixed(1)} days of cover`];
+      st.sup = S.csat<70 ? ['crit','Customers unhappy'] : S.csat<85 ? ['warn','Backlog building'] : ['ok','Backlog under control'];
+      st.lake = S.outage>0 ? ['warn','Outage: event volume spiking'] : ['ok','Ingesting all districts'];
+      return st;
+    },
+    anomalies(){
+      const out = [];
+      for(const id in ANOM){
+        const a = hist[ANOM[id]]; if(!a || a.length<22) continue;
+        const z = rollingZ(a, a.length-1);
+        if(Math.abs(z)>3.2 && (S.day-(lastAnom[id]||-99))>3){ lastAnom[id] = S.day; out.push([id, `Anomaly: ${defs[id].metric.toLowerCase()} ${z>0?'+':''}${z.toFixed(1)}σ vs 20-day baseline`]); }
+      }
+      return out;
+    },
+    details(id){
+      const L = S.last, lag = S.lag;
+      switch(id){
+        case 'lake': return {rows:[['Records today',fmtI(L.records)],['Records stored',fmtI(S.totalRecords)],['Districts streaming','6 of 6']],
+          insight:`Every district streams its raw events here. The Forecast Lab trains on this store each day, so a spike here (an outage, a viral campaign) reaches the forecast within one cycle.`};
+        case 'mkt': return {rows:[['Spend',`$${S.spend}k/day`],['Cost per lead',`$${(S.spend*1000/Math.max(1,L.leads)).toFixed(2)}`],['CSAT drag on leads',`${(L.pen*100).toFixed(1)}%`]],
+          insight:`Leads follow a square-root response to spend, so doubling spend lifts leads by about <b>41%</b>, not 100%. ${L.pen>0.03?`Unhappy customers are currently cutting lead flow by <b>${(L.pen*100).toFixed(0)}%</b>.`:'Customer sentiment is not holding leads back.'}`};
+        case 'sales': return {rows:[['Orders today',fmtI(L.lost+L.fulfilled)],['Conversion',pct(L.conv*100)],['Lost to stockouts',fmtI(L.lost)],['7-day forecast',usd(fc7())]],
+          insight:`Revenue lags leads by <b>${lag.lag} day${lag.lag===1?'':'s'}</b> (r = ${lag.r.toFixed(2)}), measured by the Forecast Lab. ${L.lost>0?`<b>${L.lost} orders</b> were lost today because the depot ran short.`:'No orders were lost to stockouts today.'}`};
+        case 'fin': { const p7 = mean(hist.profit.slice(-7)); return {rows:[['Profit today',usd(L.profit)],['7-day avg profit',usd(p7)],['Costs today',usd(L.cost)],['Margin',pct(L.revenue? L.profit/L.revenue*100 : 0)]],
+          insight:`Costs are marketing spend, $30 per unit produced and $9k fixed per day. ${p7<0?'The city is <b>burning cash</b> on the 7-day average.':'The city is <b>cash-positive</b> on the 7-day average.'}`}; }
+        case 'ai': return {rows:[['Accuracy (14-day MAPE)',pct(L.acc)],['Next 7 days revenue',usd(fc7())],['Demand plan',`${fmtI(S.plan)} units/day`],['Leads → revenue lag',`${lag.lag} days · r ${lag.r.toFixed(2)}`]],
+          insight:`Holt's linear smoothing forecasts revenue and unit demand each day. Cross-correlating the last 40 days finds revenue follows leads by <b>${lag.lag} days</b>. The demand plan goes to the plant and the forecast goes to Finance.`};
+        case 'ops': return {rows:[['Produced today',`${fmtI(L.production)} units`],['Capacity today',`${fmtI(L.cap)} units`],['Plan from Lab',`${fmtI(S.plan)} units/day`]],
+          insight: S.delay>0 ? `A supplier delay has cut capacity to <b>35%</b> for ${S.delay} more days. Watch the depot drain and Sales start losing orders.` : `The plant produces to the Lab's demand plan and tops the depot up toward <b>5 days of cover</b>.`};
+        case 'inv': { const cover = S.stock/Math.max(1,S.plan); return {rows:[['Units on hand',fmtI(S.stock)],['Days of cover',cover.toFixed(1)],['Picked today',fmtI(L.fulfilled*12)]],
+          insight:`Each order ships 12 units. Below one day of cover, orders start failing, which raises tickets at Support and lowers CSAT. Current cover: <b>${cover.toFixed(1)} days</b>.`}; }
+        case 'sup': return {rows:[['Tickets today',fmtI(L.tickets)],['Backlog',fmtI(S.backlog)],['Cleared per day','60']],
+          insight:`CSAT falls as the backlog grows and when orders fail. Below 82%, unhappy customers start reducing Marketing's lead flow. That loop is the slowest to recover.`};
+      }
+    },
+    shocks(){ return {viral:S.viral, delay:S.delay, outage:S.outage}; },
+    set(k,v){ S[k] = v; },
+  };
+  return M;
+}
+
+/* =====================================================================
+   MODEL 2 · Your data (columns → buildings, lagged correlations → roads)
+   ===================================================================== */
+const PALETTE = ['#f472b6','#ff9f43','#4ade80','#a78bfa','#60a5fa','#fde047','#2dd4bf','#94a3b8'];
+const STYLES = [['antenna',[10,30]],['twin',[9,26]],['bank',[5,14]],['lab',[10,24]],['depot',[4,10]],['dish',[8,22]],['plant',[5,12]],['tower',[9,28]]];
+const toNum = v => { if(typeof v==='number') return v; if(v==null) return NaN; const s = String(v).replace(/[$,%\s]/g,''); return s==='' ? NaN : Number(s); };
+function makeDataModel(name, rawRows, numericHint){
+  if(!rawRows || rawRows.length < 12) return {error:'Need at least 12 rows to find patterns.'};
+  const rows = rawRows.slice(-3000);
+  const cols = Object.keys(rows[0] || {});
+  let numeric = (numericHint && numericHint.length ? numericHint : cols).filter(c => {
+    let ok=0, seen=0; for(const r of rows){ const v=r[c]; if(v===''||v==null) continue; seen++; if(isFinite(toNum(v))) ok++; }
+    return seen && ok/seen >= .8;
+  });
+  const dateCol = cols.find(c => !numeric.includes(c) && rows.slice(0,5).every(r => r[c]!=null && r[c]!=='' && isNaN(toNum(r[c])) && !isNaN(Date.parse(r[c]))));
+  const data = {};
+  numeric.forEach(c => {
+    const a = rows.map(r => toNum(r[c])); const valid = a.filter(isFinite);
+    if(valid.length < rows.length*.6) return;
+    const m = mean(valid); let prev = NaN;
+    for(let i=0;i<a.length;i++){ if(isFinite(a[i])) prev = a[i]; else a[i] = isFinite(prev) ? prev : m; }
+    if(std(a) > 1e-12) data[c] = a;
+  });
+  numeric = Object.keys(data);
+  if(numeric.length < 2) return {error:'Need at least two numeric columns that change over time.'};
+  const skipped = Math.max(0, numeric.length-8);
+  numeric = numeric.slice(0,8);
+  const n = rows.length;
+  const ids = numeric.map((c,i)=>'c'+i);
+  const col = {}; ids.forEach((id,i)=>{ const a = data[numeric[i]]; col[id] = {name:numeric[i], a, mean:mean(a), sd:std(a), min:Math.min(...a), max:Math.max(...a)}; });
+  const defs = {hub:{name:name||'Dataset', short:'Hub', role:`${n.toLocaleString('en-US')} rows · ${numeric.length} numeric columns${dateCol?` · time axis: ${dateCol}`:''}`, color:'#5ad1e6', metric:'Row anomaly score', style:'dome', foot:11, range:[3,10]}};
+  ids.forEach((id,i)=>{ const [style, range] = STYLES[i%STYLES.length]; const nm = col[id].name;
+    defs[id] = {name:nm, short:nm.length>12?nm.slice(0,11)+'…':nm, role:'Column in your dataset', color:PALETTE[i%PALETTE.length], metric:nm, style, foot:['bank','depot','plant','twin'].includes(style)?10:8, range}; });
+  const maxL = Math.max(0, Math.min(6, Math.floor(n/12)));
+  const lagCorr = (x,y,L) => corr(x.slice(0,n-L), y.slice(L));
+  const links = [];
+  for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
+    const a = col[ids[i]].a, b = col[ids[j]].a;
+    let best = {r:lagCorr(a,b,0), lag:0, from:ids[i], to:ids[j]};
+    for(let L=1;L<=maxL;L++){
+      const r1 = lagCorr(a,b,L); if(Math.abs(r1) > Math.abs(best.r)+.02) best = {r:r1, lag:L, from:ids[i], to:ids[j]};
+      const r2 = lagCorr(b,a,L); if(Math.abs(r2) > Math.abs(best.r)+.02) best = {r:r2, lag:L, from:ids[j], to:ids[i]};
+    }
+    if(Math.abs(best.r) >= .4) links.push(best);
+  }
+  links.sort((p,q)=>Math.abs(q.r)-Math.abs(p.r));
+  const kept = links.slice(0,14);
+  const edges = [
+    ...kept.map(l => ({from:l.from, to:l.to, r:l.r, lag:l.lag, label: l.lag ? `leads by ${l.lag} row${l.lag>1?'s':''} · r ${l.r.toFixed(2)}` : `moves with · r ${l.r.toFixed(2)}`})),
+    ...ids.map(id => ({from:id, to:'hub', label:'values'})),
+  ];
+  const score = Array.from({length:n}, (_,t) => mean(ids.map(id => Math.abs((col[id].a[t]-col[id].mean)/col[id].sd))));
+  let cur = Math.min(40, n-1);
+  const lab = t => dateCol ? String(rows[t][dateCol]).slice(0,10) : `#${t+1}`;
+  const arrOf = id => id==='hub' ? score : col[id].a;
+  const M = {
+    kind:'data', defs, ring:ids, hub:'hub', edges, links:kept, name, n, dateCol, skipped,
+    reset(){ cur = Math.min(40, n-1); },
+    step(){ cur++; if(cur >= n){ cur = Math.min(20, n-1); M.onReplay && M.onReplay(); } },
+    seek(t){ cur = Math.max(1, Math.min(n-1, t)); },
+    pos(){ return cur; },
+    stamp(){ return lab(cur); },
+    clock(){ return `${dateCol?'':'Row '}<b>${esc(lab(cur))}</b> of ${n.toLocaleString('en-US')}`; },
+    series(id){ return arrOf(id).slice(0, cur+1).slice(-120); },
+    fmt(id,v){ return id==='hub' ? v.toFixed(2)+'σ' : num(v); },
+    forecast(id){ return holtForecast(arrOf(id).slice(Math.max(0,cur-59), cur+1), 7); },
+    xLabel(back){ return lab(Math.max(0,cur-back)); },
+    xLabelAhead(h){ return dateCol ? `+${h} rows` : `#${cur+1+h}`; },
+    payload(e){
+      if(e.to==='hub') return `${num(col[e.from].a[cur])}`;
+      const a = col[e.from].a, prev = a[Math.max(0,cur-1)], ch = prev ? (a[cur]-prev)/Math.abs(prev)*100 : 0;
+      const dir = Math.sign(ch)*Math.sign(e.r);
+      return `${defs[e.from].name} ${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}% → ${defs[e.to].name} likely ${dir>=0?'up':'down'}${e.lag?` in ${e.lag}`:''}`;
+    },
+    status(){
+      const st = {};
+      ids.forEach(id => { const z = rollingZ(col[id].a, cur), az = Math.abs(z);
+        st[id] = az>3 ? ['crit',`${z>0?'Spike':'Drop'} ${z>0?'+':''}${z.toFixed(1)}σ vs last 20 rows`] : az>2 ? ['warn',`Unusual move ${z>0?'+':''}${z.toFixed(1)}σ`] : ['ok','Within normal range']; });
+      const sc = score[cur];
+      st.hub = sc>2.2 ? ['crit',`Whole row is extreme (${sc.toFixed(2)}σ)`] : sc>1.5 ? ['warn',`Row is unusual (${sc.toFixed(2)}σ)`] : ['ok','Row looks typical'];
+      return st;
+    },
+    anomalies(){ return []; },
+    details(id){
+      if(id==='hub'){
+        const top = kept[0];
+        return {rows:[['Rows',n.toLocaleString('en-US')],['Columns in city',`${ids.length}${skipped?` (+${skipped} not shown)`:''}`],['Relationships found',String(kept.length)],['Time axis',dateCol||'row order']],
+          insight: top ? `The city found <b>${kept.length}</b> relationship${kept.length>1?'s':''} with |r| ≥ 0.4. The strongest: <b>${esc(defs[top.from].name)}</b> → <b>${esc(defs[top.to].name)}</b> (r = ${top.r.toFixed(2)}${top.lag?`, ${top.lag}-row lead`:''}). The hub's height shows how unusual the current row is across all columns.`
+                       : `No pair of columns reaches |r| ≥ 0.4, so the districts only report to the hub. The hub's height shows how unusual the current row is across all columns.`};
+      }
+      const c = col[id], a = c.a, v = a[cur];
+      const fc = M.forecast(id), w = a.slice(0,cur+1).slice(-30);
+      let slope = 0;
+      if(w.length>2){ const mx=(w.length-1)/2, my=mean(w); let nn=0,dd=0; w.forEach((y,i)=>{ nn+=(i-mx)*(y-my); dd+=(i-mx)**2; }); slope = nn/dd; }
+      const trendPct = c.mean ? slope*10/Math.abs(c.mean)*100 : 0;
+      const mine = kept.filter(l => l.from===id || l.to===id);
+      const s = mine[0];
+      let ins;
+      if(s){
+        const other = s.from===id ? s.to : s.from;
+        const lead = s.lag ? `${esc(defs[s.from].name)} moves first by ${s.lag} row${s.lag>1?'s':''}` : 'they move together';
+        ins = `Strongest link: <b>${esc(defs[other].name)}</b> (r = ${s.r.toFixed(2)}, ${lead}). A 1σ change here goes with about <b>${Math.abs(s.r).toFixed(2)}σ</b> ${s.r>0?'in the same direction':'in the opposite direction'} there.`;
+      } else ins = `No other column links to this one at |r| ≥ 0.4, so it moves on its own.`;
+      ins += ` Over the last 30 rows it is ${Math.abs(trendPct)<1?'<b>flat</b>':`trending <b>${trendPct>0?'up':'down'} ${Math.abs(trendPct).toFixed(1)}%</b> per 10 rows`}.`;
+      return {rows:[['Current',num(v)],['Mean',num(c.mean)],['Range',`${num(c.min)} – ${num(c.max)}`],['Forecast in 7 rows',num(fc[6])],['Links',String(mine.length)]], insight:ins};
+    },
+    whatIf(id, frac){
+      const c = col[id]; if(!c) return null;
+      const v = c.a[cur]; const dA = Math.abs(v) > 1e-9 ? Math.abs(v)*frac : c.sd*Math.sign(frac);
+      const hop1 = kept.filter(l => l.from===id || l.to===id).map(l => {
+        const other = l.from===id ? l.to : l.from, o = col[other];
+        const dB = l.r * (o.sd/c.sd) * dA, base = o.a[cur];
+        return {to:other, r:l.r, lag:l.lag, dB, pctB: Math.abs(base)>1e-9 ? dB/Math.abs(base)*100 : NaN};
+      });
+      const seen = new Set([id, ...hop1.map(h=>h.to)]);
+      const hop2 = [];
+      hop1.forEach(h => kept.filter(l => l.from===h.to || l.to===h.to).forEach(l => {
+        const other = l.from===h.to ? l.to : l.from; if(seen.has(other)) return; seen.add(other);
+        const o = col[other], m = col[h.to]; const dC = l.r * (o.sd/m.sd) * h.dB, base = o.a[cur];
+        hop2.push({via:h.to, to:other, r:l.r, dC, pctC: Math.abs(base)>1e-9 ? dC/Math.abs(base)*100 : NaN});
+      }));
+      return {dA, hop1, hop2};
+    },
+  };
+  return M;
+}
+
+/* ---------- CSV ---------- */
+function parseCSV(txt){
+  const out = []; let row = [], f = '', q = false;
+  for(let i=0;i<txt.length;i++){
+    const c = txt[i];
+    if(q){ if(c==='"'){ if(txt[i+1]==='"'){ f+='"'; i++; } else q = false; } else f += c; }
+    else if(c==='"') q = true;
+    else if(c===','){ row.push(f); f=''; }
+    else if(c==='\n' || c==='\r'){ if(c==='\r' && txt[i+1]==='\n') i++; row.push(f); f=''; if(row.length>1 || row[0]!=='') out.push(row); row = []; }
+    else f += c;
+  }
+  if(f!=='' || row.length){ row.push(f); out.push(row); }
+  const head = (out.shift() || []).map((h,i)=>h.trim() || `col_${i+1}`);
+  return out.map(r => Object.fromEntries(head.map((h,i)=>[h, r[i]])));
+}
+
+/* =====================================================================
+   SCENE
+   ===================================================================== */
+const canvas = $('#scene');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080b16);
+scene.fog = new THREE.Fog(0x080b16, 110, 260);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 700);
+camera.position.set(78,70,96);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = .08;
+controls.maxPolarAngle = Math.PI*0.48; controls.minDistance = 8; controls.maxDistance = 240;
+controls.target.set(0,6,0);
+controls.autoRotate = !reduce; controls.autoRotateSpeed = .35;
+scene.add(new THREE.HemisphereLight(0x8a9cff, 0x0a0c18, .75));
+const sun = new THREE.DirectionalLight(0xc7d2ff, .55); sun.position.set(-60,120,40); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(700,700), new THREE.MeshStandardMaterial({color:0x0c1122, roughness:1}));
+ground.rotation.x = -Math.PI/2; scene.add(ground);
+const grid = new THREE.GridHelper(320, 64, 0x1a2242, 0x121831); grid.position.y = .01; scene.add(grid);
+
+function windowTexture(lit){
+  const c = document.createElement('canvas'); c.width=64; c.height=128; const g = c.getContext('2d');
+  g.fillStyle='#0d1224'; g.fillRect(0,0,64,128);
+  for(let y=5;y<128;y+=10) for(let x=5;x<64;x+=10){ const on = rnd()<lit; g.fillStyle = on ? (rnd()<.55?'#ffd38a':'#a8ecff') : '#18203b'; g.fillRect(x,y,5,6); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+const winTex = windowTexture(.42);
+const glowTex = (() => { const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d'); const r=g.createRadialGradient(32,32,0,32,32,32); r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(.35,'rgba(255,255,255,.35)'); r.addColorStop(1,'rgba(255,255,255,0)'); g.fillStyle=r; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
+
+(() => {
+  const n = 170, geo = new THREE.BoxGeometry(1,1,1); geo.translate(0,.5,0);
+  const t = windowTexture(.18);
+  const mat = new THREE.MeshStandardMaterial({color:0x141a2e, map:t, emissive:0xffffff, emissiveMap:t, emissiveIntensity:.28, roughness:.9});
+  const mesh = new THREE.InstancedMesh(geo, mat, n), m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0,1,0);
+  for(let i=0;i<n;i++){
+    const a = rnd()*Math.PI*2, r = 70 + rnd()*75;
+    p.set(Math.cos(a)*r, 0, Math.sin(a)*r); sc.set(4+rnd()*7, 3+rnd()*rnd()*24, 4+rnd()*7);
+    q.setFromAxisAngle(up, Math.round(a/(Math.PI/2))*Math.PI/2 + (rnd()-.5)*.3);
+    m.compose(p,q,sc); mesh.setMatrixAt(i,m);
+  }
+  scene.add(mesh);
+})();
+
+/* ---------- city (rebuilt per model) ---------- */
+let M = null, B = {}, pickables = [], roads = {}, EDGES = [], cityRoot = null, status = {}, sel = null;
+const R = 47;
+function screenFor(b){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 288;
+  b.ctx = c.getContext('2d'); b.tex = new THREE.CanvasTexture(c); b.tex.anisotropy = 4;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:b.tex, transparent:true, depthWrite:false}));
+  sp.scale.set(15.5, 8.72, 1); sp.renderOrder = 2; b.sprite = sp; b.group.add(sp); sp.userData.id = b.id; pickables.push(sp);
+}
+const DIMS = {dome:[4.4,0,'cyl'], antenna:[7,7], twin:[8,8], bank:[14,9], lab:[8,8], plant:[14,10], depot:[16,9], dish:[9,0,'cyl'], tower:[7,7]};
+function makeBuilding(id, x, z){
+  const d = M.defs[id], col = new THREE.Color(d.color), st = d.style;
+  const g = new THREE.Group(); g.position.set(x,0,z); g.rotation.y = (x||z) ? Math.atan2(-x,-z) : 0; cityRoot.add(g);
+  const b = {id, def:d, group:g, h:d.range[0], targetH:d.range[0], pulse:0, extras:[], topOff:1};
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(d.foot+1,48), new THREE.MeshStandardMaterial({color:0x11172d, roughness:1}));
+  pad.rotation.x = -Math.PI/2; pad.position.y = .03; g.add(pad);
+  b.plaza = new THREE.Mesh(new THREE.RingGeometry(d.foot+1, d.foot+2.1, 64), new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:.3, side:THREE.DoubleSide}));
+  b.plaza.rotation.x = -Math.PI/2; b.plaza.position.y = .06; g.add(b.plaza);
+  const dims = DIMS[st], isCyl = dims[2]==='cyl';
+  const geo = isCyl ? new THREE.CylinderGeometry(dims[0]/2,dims[0]/2,1,28) : new THREE.BoxGeometry(dims[0],1,dims[1]);
+  geo.translate(0,.5,0);
+  const tex = winTex.clone(); tex.needsUpdate = true; tex.repeat.set(isCyl ? 5 : Math.max(1,Math.round(dims[0]/5)), 3);
+  const mat = new THREE.MeshStandardMaterial({color:0x1b2238, map:tex, emissive:0xffffff, emissiveMap:tex, emissiveIntensity:.5, roughness:.75, metalness:.15});
+  const core = new THREE.Mesh(geo, mat); g.add(core); b.core = core;
+  core.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo,30), new THREE.LineBasicMaterial({color:col})));
+  const glowMat = new THREE.MeshBasicMaterial({color:col});
+  const follow = (obj, off) => { g.add(obj); b.extras.push({obj, off}); };
+  if(!isCyl) follow(new THREE.Mesh(new THREE.BoxGeometry(dims[0]*.86,.3,dims[1]*.86), glowMat), .15);
+  if(st==='antenna'){ follow(new THREE.Mesh(new THREE.CylinderGeometry(.18,.3,6,8), new THREE.MeshStandardMaterial({color:0x8892b0})), 3); b.topOff = 6.4; }
+  if(st==='twin'){
+    const g2 = new THREE.BoxGeometry(5.5,1,5.5); g2.translate(0,.5,0);
+    const t2 = new THREE.Mesh(g2, mat); t2.position.set(7,0,-2.5); g.add(t2);
+    t2.add(new THREE.LineSegments(new THREE.EdgesGeometry(g2), new THREE.LineBasicMaterial({color:col}))); b.twin = t2;
+  }
+  if(st==='bank'){
+    for(let i=0;i<6;i++){ const c = new THREE.Mesh(new THREE.CylinderGeometry(.45,.45,4,12), new THREE.MeshStandardMaterial({color:0xcfd8ea, emissive:0x223322})); c.position.set(-5+i*2, 2, dims[1]/2+1.4); g.add(c); }
+    const s1 = new THREE.Mesh(new THREE.BoxGeometry(dims[0],.4,3.6), new THREE.MeshStandardMaterial({color:0x2a3352})); s1.position.set(0,.2,dims[1]/2+1.4); g.add(s1);
+  }
+  if(st==='plant'){ [-3.5,3.5].forEach(xo=>{ const ch = new THREE.Mesh(new THREE.CylinderGeometry(.8,1,6,14), new THREE.MeshStandardMaterial({color:0x2c3550})); ch.position.x = xo; follow(ch,3); }); b.topOff = 6.6; }
+  if(st==='depot'){ for(let i=0;i<10;i++){ const cr = new THREE.Mesh(new THREE.BoxGeometry(1.6,1.6,1.6), new THREE.MeshStandardMaterial({color:0x1d2b4a, emissive:col, emissiveIntensity:.18})); cr.position.set(-8+(i%5)*4, .8+(i>=5?1.6:0), dims[1]/2+2.2); g.add(cr); } }
+  if(st==='dish'){ const dish = new THREE.Mesh(new THREE.TorusGeometry(2.2,.18,8,32), glowMat); dish.rotation.x = Math.PI/2; follow(dish,.6); }
+  if(st==='lab'){ const ring = new THREE.Mesh(new THREE.TorusGeometry(7,.22,8,64), glowMat); ring.rotation.x = Math.PI/2.3; follow(ring,2); b.ring = ring; b.topOff = 3; }
+  if(st==='dome'){
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(d.foot,d.foot+.6,1.2,48), new THREE.MeshStandardMaterial({color:0x13203a, emissive:col, emissiveIntensity:.08})); base.position.y=.6; g.add(base);
+    const domeGeo = new THREE.SphereGeometry(d.foot-.4,40,20,0,Math.PI*2,0,Math.PI/2);
+    const dome = new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:.08, depthWrite:false})); dome.position.y = 1.2; g.add(dome);
+    const wire = new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial({color:col, wireframe:true, transparent:true, opacity:.22})); wire.position.y = 1.2; g.add(wire);
+    b.fixedTop = d.foot+1.2;
+  }
+  b.beacon = new THREE.Mesh(new THREE.SphereGeometry(.75,16,12), new THREE.MeshBasicMaterial({color:STATUS_HEX.ok}));
+  const bg = new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex, color:STATUS_HEX.ok, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false}));
+  bg.scale.set(4,4,1); b.beacon.add(bg); b.beaconGlow = bg; g.add(b.beacon);
+  g.traverse(o => { if(o.isMesh){ o.userData.id = id; pickables.push(o); } });
+  screenFor(b);
+  B[id] = b;
+}
+function roadFor(a,b){
+  const key = [a,b].sort().join('|'); if(roads[key]) return roads[key];
+  const [ia, ib] = key.split('|');
+  const A = B[ia].group.position.clone(), Bp = B[ib].group.position.clone();
+  const mid = A.clone().add(Bp).multiplyScalar(.5);
+  let ctrl = mid.clone();
+  const md = Math.hypot(mid.x, mid.z);
+  if(ia!==M.hub && ib!==M.hub && md < 26){ if(md < .01) mid.set(1,0,0); ctrl = mid.clone().setY(0).normalize().multiplyScalar(52-md); }
+  const sR = M.defs[ia].foot+2, eR = M.defs[ib].foot+2;
+  const s = A.clone().add(ctrl.clone().sub(A).setY(0).normalize().multiplyScalar(sR));
+  const e = Bp.clone().add(ctrl.clone().sub(Bp).setY(0).normalize().multiplyScalar(eR));
+  const curve = new THREE.QuadraticBezierCurve3(s, ctrl, e);
+  const N = 48, pts = curve.getSpacedPoints(N), pos = [], idx = [], W = 1.7;
+  for(let i=0;i<=N;i++){
+    const t = curve.getTangentAt(i/N), p = pts[i];
+    pos.push(p.x - t.z*W, .04, p.z + t.x*W, p.x + t.z*W, .04, p.z - t.x*W);
+    if(i<N){ const k=i*2; idx.push(k,k+1,k+2, k+1,k+3,k+2); }
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3)); geo.setIndex(idx); geo.computeVertexNormals();
+  cityRoot.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:0x161d34, roughness:.95, side:THREE.DoubleSide})));
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(p=>new THREE.Vector3(p.x,.08,p.z))), new THREE.LineDashedMaterial({color:0x3d4a78, dashSize:1.2, gapSize:1.2}));
+  line.computeLineDistances(); cityRoot.add(line);
+  return roads[key] = {a:ia, b:ib, curve, len:curve.getLength()};
+}
+function buildCity(){
+  if(cityRoot){
+    scene.remove(cityRoot);
+    cityRoot.traverse(o => { if(o.geometry) o.geometry.dispose(); if(o.material){ const mt = o.material; if(mt.map && mt.map!==glowTex) mt.map.dispose(); mt.dispose(); } });
+  }
+  clearPackets();
+  cityRoot = new THREE.Group(); scene.add(cityRoot);
+  B = {}; pickables = []; roads = {};
+  makeBuilding(M.hub, 0, 0);
+  const n = M.ring.length;
+  M.ring.forEach((id,i)=>{ const a = -Math.PI/2 + i*2*Math.PI/n; makeBuilding(id, Math.cos(a)*R, Math.sin(a)*R); });
+  EDGES = M.edges.map(e => { const road = roadFor(e.from, e.to); return Object.assign({}, e, {road, rev:road.a!==e.from, color:M.defs[e.from].color, last:''}); });
+}
+
+/* ---------- packets ---------- */
+const packets = [], pool = [];
+const pGeo = new THREE.SphereGeometry(.55,12,10);
+const _p = new THREE.Vector3(), _t = new THREE.Vector3();
+function clearPackets(){ packets.forEach(p=>{ scene.remove(p.mesh); pool.push(p); }); packets.length = 0; }
+function edgePoint(edge,u,out,tan){
+  const t = edge.rev ? 1-u : u;
+  edge.road.curve.getPointAt(t,out); edge.road.curve.getTangentAt(t,tan);
+  if(edge.rev) tan.negate();
+  out.x += -tan.z*.85; out.z += tan.x*.85; out.y = 1.1;
+}
+function spawn(edge, text, big){
+  if(packets.length > 260) return;
+  let p = pool.pop();
+  if(!p){
+    const m = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({color:0xffffff}));
+    const gl = new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex, color:0xffffff, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false}));
+    gl.scale.set(3.4,3.4,1); m.add(gl); p = {mesh:m, glow:gl};
+  }
+  p.mesh.material.color.set(edge.color); p.glow.material.color.set(edge.color);
+  p.mesh.scale.setScalar(big ? 2 : 1);
+  p.edge = edge; p.u = 0; p.dur = edge.road.len/19; p.text = text || edge.last;
+  scene.add(p.mesh); packets.push(p);
+  if(ride.on && !ride.p && ride.waitFrom===edge.from && (edge.to!==M.hub || rnd()<.25)){ ride.p = p; ride.waitFrom = null; setRideHud(); }
+}
+function updatePackets(dt){
+  for(let i=packets.length-1;i>=0;i--){
+    const p = packets[i]; p.u += dt/p.dur;
+    if(p.u >= 1){
+      if(B[p.edge.to]) B[p.edge.to].pulse = 1;
+      scene.remove(p.mesh); packets.splice(i,1); pool.push(p);
+      if(ride.p===p){ ride.p = null; ride.waitFrom = p.edge.to; setRideHud(); }
+      continue;
+    }
+    edgePoint(p.edge, p.u, _p, _t); p.mesh.position.copy(_p);
+    if(!reduce) p.mesh.position.y += Math.sin(p.u*Math.PI)*.6;
+  }
+}
+
+/* ---------- screens ---------- */
+function rr(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r); g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
+function fit(g, text, maxW, size, weight, fam, min){
+  let s = size; g.font = `${weight} ${s}px ${fam}`;
+  while(g.measureText(text).width > maxW && s > min){ s -= 2; g.font = `${weight} ${s}px ${fam}`; }
+  if(g.measureText(text).width > maxW){ while(text.length>2 && g.measureText(text+'…').width > maxW) text = text.slice(0,-1); text += '…'; }
+  return text;
+}
+function drawScreen(b){
+  const g = b.ctx, d = b.def, W = 512, H = 288, ser = M.series(b.id).slice(-40), st = status[b.id] ? status[b.id][0] : 'ok';
+  g.clearRect(0,0,W,H);
+  rr(g,6,6,W-12,H-12,18); g.fillStyle = 'rgba(8,12,26,0.9)'; g.fill();
+  g.lineWidth = sel===b.id ? 6 : 3; g.strokeStyle = d.color; g.stroke();
+  g.fillStyle = d.color; g.fillRect(30,30,10,40);
+  g.textBaseline = 'middle';
+  const title = fit(g, d.name.toUpperCase(), W-130, 34, 600, '"Chakra Petch", sans-serif', 20);
+  g.fillStyle = '#e3e9f6'; g.fillText(title, 54, 52);
+  g.fillStyle = st==='ok' ? COL.ok : st==='warn' ? COL.warn : COL.crit;
+  g.beginPath(); g.arc(W-44,50,11,0,Math.PI*2); g.fill();
+  const v = ser.length ? ser[ser.length-1] : 0;
+  const val = fit(g, M.fmt(b.id,v), W-60, 62, 600, '"JetBrains Mono", monospace', 30);
+  g.fillStyle = '#e3e9f6'; g.fillText(val, 30, 120);
+  const met = fit(g, d.metric, 250, 22, 500, '"Barlow", sans-serif', 16);
+  g.fillStyle = '#8b96b3'; g.fillText(met, 30, 166);
+  if(ser.length>8){
+    const p = ser[ser.length-8], ch = p ? (v-p)/Math.abs(p)*100 : 0;
+    g.textAlign = 'right'; g.font = '600 24px "JetBrains Mono", monospace';
+    g.fillStyle = Math.abs(ch)<.5 ? '#8b96b3' : ch>0 ? COL.ok : COL.crit;
+    g.fillText(`${ch>=0?'▲':'▼'} ${Math.abs(ch).toFixed(1)}% ${M.kind==='demo'?'7d':'7r'}`, W-30, 166); g.textAlign = 'left';
+  }
+  if(ser.length>1){
+    const x0=30,x1=W-30,y0=258,y1=192; let mn=Math.min(...ser), mx=Math.max(...ser); if(mx-mn<1e-9){mx+=1;mn-=1;}
+    const X = i => x0 + (x1-x0)*i/(ser.length-1), Y = v => y0 - (y0-y1)*(v-mn)/(mx-mn);
+    g.beginPath(); ser.forEach((v,i)=> i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v)));
+    g.lineTo(x1,y0); g.lineTo(x0,y0); g.closePath(); g.fillStyle = hexA(d.color,.18); g.fill();
+    g.beginPath(); ser.forEach((v,i)=> i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v))); g.lineWidth = 3.5; g.strokeStyle = d.color; g.stroke();
+    g.beginPath(); g.arc(x1, Y(v), 6, 0, Math.PI*2); g.fillStyle = d.color; g.fill();
+  }
+  b.tex.needsUpdate = true;
+}
+
+/* ---------- inspector ---------- */
+function delta(ser){
+  if(!ser || ser.length<8) return '';
+  const v = ser[ser.length-1], p = ser[ser.length-8]; const ch = p ? (v-p)/Math.abs(p)*100 : 0;
+  const cls = Math.abs(ch)<.5 ? 'flat' : ch>0 ? 'up' : 'down';
+  return `<span class="delta ${cls}">${ch>=0?'▲':'▼'} ${Math.abs(ch).toFixed(1)}% vs ${M.kind==='demo'?'7 days':'7 rows'} ago</span>`;
+}
+const chip = id => `<button class="chip" data-id="${id}" style="--c:${M.defs[id].color}" title="${esc(M.defs[id].name)}">${esc(M.defs[id].short)}</button>`;
+function renderInspector(){
+  if(!sel || !B[sel] || $('#inspector').hidden) return;
+  const d = M.defs[sel], [st, note] = status[sel], ser = M.series(sel), det = M.details(sel);
+  $('#iSw').style.background = d.color; $('#iName').textContent = d.name; $('#iRole').textContent = d.role;
+  $('#iTop').innerHTML = `<span class="pill ${st}">${st==='ok'?'Normal':st==='warn'?'Watch':'Critical'}</span><span class="pill-note">${esc(note)}</span>
+    <div class="metric"><span class="lab">${esc(d.metric)}</span><span class="val">${esc(M.fmt(sel, ser[ser.length-1]||0))}</span>${delta(ser)}</div>`;
+  const links = EDGES.filter(e => (e.from===sel || e.to===sel) && (sel===M.hub || e.to!==M.hub || e.from===sel));
+  $('#iBottom').innerHTML = `<dl class="rows">${det.rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    ${links.length?`<h3 class="sec">Talks to</h3><ul class="links">${links.map(e=>{ const other = e.from===sel ? e.to : e.from; return `<li><span>${e.from===sel?'→':'←'} ${chip(other)}</span><span>${esc(e.label)}</span><span class="what">${esc(e.last||'—')}</span></li>`; }).join('')}</ul>`:''}
+    <p class="insight">${det.insight}</p>`;
+  drawChart();
+}
+function drawChart(){
+  const c = $('#iChart'), w = c.clientWidth, h = c.clientHeight; if(!w || !sel || !B[sel]) return;
+  const dpr = Math.min(devicePixelRatio,2); c.width = w*dpr; c.height = h*dpr;
+  const g = c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+  const d = M.defs[sel], ser = M.series(sel).slice(-60), fc = sel===M.hub ? [] : M.forecast(sel);
+  const all = ser.concat(fc); if(all.length<2) return;
+  let mn = Math.min(...all), mx = Math.max(...all); const pad = (mx-mn)*.12 || 1; mn -= pad; mx += pad;
+  const L = 4, Rr = w-4, top = 14, bot = h-18, n = all.length;
+  const X = i => L + (Rr-L)*i/(n-1), Y = v => bot - (bot-top)*(v-mn)/(mx-mn);
+  g.strokeStyle = 'rgba(139,150,179,.14)'; g.lineWidth = 1;
+  for(let i=0;i<3;i++){ const y = top + (bot-top)*i/2; g.beginPath(); g.moveTo(L,y); g.lineTo(Rr,y); g.stroke(); }
+  g.beginPath(); ser.forEach((v,i)=> i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v))); g.lineTo(X(ser.length-1),bot); g.lineTo(X(0),bot); g.closePath(); g.fillStyle = hexA(d.color,.16); g.fill();
+  g.beginPath(); ser.forEach((v,i)=> i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v))); g.strokeStyle = d.color; g.lineWidth = 2; g.stroke();
+  const li = ser.length-1; g.beginPath(); g.arc(X(li),Y(ser[li]),3.5,0,Math.PI*2); g.fillStyle = d.color; g.fill();
+  g.font = '500 10px "JetBrains Mono", monospace';
+  if(fc.length){
+    g.setLineDash([4,4]); g.beginPath(); g.moveTo(X(li),Y(ser[li])); fc.forEach((v,i)=>g.lineTo(X(li+1+i),Y(v))); g.strokeStyle = COL.data; g.lineWidth = 2; g.stroke(); g.setLineDash([]);
+    g.fillStyle = COL.data; g.textAlign = 'right'; g.fillText('forecast', Rr, top-3); g.textAlign = 'left';
+  }
+  g.fillStyle = COL.muted;
+  g.fillText(M.fmt(sel, mx-pad), L, top-3);
+  g.fillText(M.xLabel(ser.length-1), L, h-4); g.textAlign = 'right'; g.fillText(fc.length ? M.xLabelAhead(fc.length) : M.xLabel(0), Rr, h-4); g.textAlign = 'left';
+}
+
+/* ---------- radio ---------- */
+const logEl = $('#log');
+function log(kind, from, to, text){
+  const li = document.createElement('li'); li.className = kind;
+  li.innerHTML = `<span class="d" title="${esc(M.stamp())}">${esc(M.stamp())}</span><span class="route">${chip(from)}${to?`<span class="ar">→</span>${chip(to)}`:''}</span><span class="t"></span>`;
+  li.querySelector('.t').textContent = text; logEl.prepend(li);
+  while(logEl.children.length>50) logEl.lastChild.remove();
+}
+document.addEventListener('click', e => { const c = e.target.closest('.chip'); if(c && B[c.dataset.id]){ stopModes(); select(c.dataset.id, true); } });
+
+/* ---------- tick ---------- */
+let flowIdx = 0, prevStatus = {}, ticks = 0;
+const RANK = {ok:0,warn:1,crit:2};
+function afterStep(live){
+  status = M.status();
+  EDGES.forEach(e => { e.last = M.payload(e); if(live) spawn(e); });
+  if(live){
+    for(const id in status){
+      const p = prevStatus[id] ? prevStatus[id][0] : 'ok', n = status[id][0];
+      if(RANK[n] > RANK[p]) log(n, id, null, status[id][1]);
+      else if(RANK[n] < RANK[p] && n==='ok' && M.kind==='demo') log('ok', id, null, `Recovered · ${status[id][1]}`);
+    }
+    M.anomalies().forEach(([id,t]) => log('anom', id, M.hub, t));
+    const flows = EDGES.filter(e => e.to!==M.hub);
+    if(flows.length && ticks % speed === 0){ const e = flows[flowIdx % flows.length]; flowIdx++; log('', e.from, e.to, e.last); }
+  }
+  prevStatus = status;
+  for(const id in B){
+    const b = B[id], d = b.def, ser = M.series(id).slice(-60);
+    const mn = Math.min(...ser), mx = Math.max(...ser), v = ser[ser.length-1];
+    const nrm = mx-mn > 1e-9 ? (v-mn)/(mx-mn) : .5;
+    b.targetH = d.range[0] + (d.range[1]-d.range[0])*nrm;
+    const c = STATUS_HEX[status[id][0]]; b.beacon.material.color.setHex(c); b.beaconGlow.material.color.setHex(c);
+    drawScreen(b);
+  }
+  $('#clock').innerHTML = M.clock();
+  const bad = Object.values(status).filter(s=>s[0]!=='ok'), crit = bad.some(s=>s[0]==='crit');
+  const cs = $('#cityStatus'); cs.textContent = bad.length ? `${bad.length} district${bad.length>1?'s':''} need${bad.length>1?'':'s'} attention` : 'All districts normal';
+  cs.className = bad.length ? (crit?'crit':'warn') : '';
+  if(M.kind==='demo') updateShockButtons();
+  else { const sc = $('#scrub'); if(document.activeElement!==sc) sc.value = M.pos(); $('#scrubOut').textContent = M.stamp(); }
+  renderInspector();
+}
+function tick(){ ticks++; M.step(); afterStep(true); }
+
+/* ---------- model switching ---------- */
+function setModel(m, note){
+  endRide(); stopModes(); fly = null;
+  M = m; M.reset(); sel = null; prevStatus = {}; flowIdx = 0;
+  buildCity();
+  afterStep(false); prevStatus = status;
+  for(const id in B) B[id].h = B[id].targetH;
+  logEl.innerHTML = '';
+  const isData = M.kind==='data';
+  $('#dockDemo').hidden = isData; $('#dockData').hidden = !isData;
+  if(isData){
+    M.onReplay = () => log('', M.hub, null, 'Reached the last row. Replaying from the start.');
+    $('#dsInfo').innerHTML = `<b>${esc(M.name)}</b><br>${M.n.toLocaleString('en-US')} rows · ${M.ring.length} columns · ${M.links.length} relationships`;
+    const sc = $('#scrub'); sc.max = M.n-1; sc.value = M.pos(); $('#scrubOut').textContent = M.stamp();
+    log('ok', M.hub, null, `City built from ${M.name}: ${M.ring.length} districts, ${M.links.length} roads.${M.skipped?` ${M.skipped} more numeric columns not shown.`:''}`);
+    if(M.links[0]){ const l = M.links[0]; log('anom', l.from, l.to, `Strongest relationship: r = ${l.r.toFixed(2)}${l.lag?`, ${l.lag}-row lead`:''}`); }
+  } else {
+    log('ok', M.hub, null, 'Demo city online. Six districts streaming.');
+    if(note){ const n = $('#demoNote'); n.textContent = note; n.className = 'note'; }
+  }
+  camera.position.set(78,70,96); controls.target.set(0,6,0);
+  if(!narrow()) select(M.hub, false); else { $('#inspector').hidden = true; updateShockUi(); }
+}
+function showDemoNote(text, isErr){ const n = $('#demoNote'); n.textContent = text; n.className = isErr ? 'note err' : 'note'; }
+function loadRows(name, rows, numericCols){
+  const m = makeDataModel(name, rows, numericCols);
+  if(m.error){
+    if(M && M.kind==='data') log('warn', M.hub, null, `${name}: ${m.error}`);
+    else showDemoNote(`${name}: ${m.error} Showing the demo city.`, true);
+    return false;
+  }
+  setModel(m); return true;
+}
+function readCsv(file){
+  if(!file) return;
+  const fr = new FileReader();
+  fr.onload = () => { try { loadRows(file.name.replace(/\.csv$/i,''), parseCSV(String(fr.result))); } catch(err){ showDemoNote(`Could not read ${file.name}. Check that it is a comma-separated file with a header row.`, true); } };
+  fr.readAsText(file);
+}
+$('#csvIn').onchange = e => { readCsv(e.target.files[0]); e.target.value = ''; };
+$('#csvIn2').onchange = e => { readCsv(e.target.files[0]); e.target.value = ''; };
+$('#demoBtn').onclick = () => setModel(makeDemoModel());
+/* A host page (A5Analytica) can post its active dataset:
+   frame.contentWindow.postMessage({type:'a5-dataset', name, rows:[{col:value,…}], numericCols:[…]}, '*') */
+addEventListener('message', e => {
+  const m = e.data; if(!m || m.type!=='a5-dataset') return;
+  if(!m.rows || !m.rows.length){
+    if(M.kind!=='demo') setModel(makeDemoModel());
+    showDemoNote('No dataset is loaded in A5Analytica yet. Upload one under Data → Upload & Quality to build your own city.', false);
+    return;
+  }
+  loadRows(m.name || 'Your dataset', m.rows, m.numericCols);
+});
+
+/* ---------- what-if (data) ---------- */
+function updateShockUi(){
+  if(!M || M.kind!=='data') return;
+  const ok = !!(sel && sel!==M.hub);
+  $('#shockUp').disabled = !ok; $('#shockDown').disabled = !ok;
+  $('#shockSub').textContent = ok ? `Shock ${M.defs[sel].short}` : 'Select a column building';
+}
+function runWhatIf(frac){
+  if(!sel || sel===M.hub) return;
+  const res = M.whatIf(sel, frac); if(!res) return;
+  const name = M.defs[sel].name;
+  log('what', sel, null, `What-if: ${name} ${frac>0?'+':'−'}${Math.abs(frac*100)}% (${res.dA>=0?'+':'−'}${num(Math.abs(res.dA))})`);
+  B[sel].pulse = 1;
+  if(!res.hop1.length){ log('what', sel, null, 'No linked columns, so nothing else is expected to move.'); return; }
+  const fmtCh = (d, p) => `${d>=0?'+':'−'}${num(Math.abs(d))}${isFinite(p)?` (${p>=0?'+':'−'}${Math.abs(p).toFixed(1)}%)`:''}`;
+  const send = (from, to, txt) => {
+    const e = EDGES.find(x => (x.from===from && x.to===to) || (x.from===to && x.to===from)); if(!e) return;
+    spawn(Object.assign({}, e, {from, to, rev: e.road.a!==from, color:M.defs[from].color}), txt, true);
+  };
+  res.hop1.forEach(h => { const txt = `Expected ${M.defs[h.to].name} ${fmtCh(h.dB, h.pctB)}${h.lag?` within ${h.lag} row${h.lag>1?'s':''}`:''}`; log('what', sel, h.to, txt); send(sel, h.to, txt); });
+  setTimeout(() => res.hop2.forEach(h => { const txt = `Knock-on: ${M.defs[h.to].name} ${fmtCh(h.dC, h.pctC)} via ${M.defs[h.via].name}`; log('what', h.via, h.to, txt); send(h.via, h.to, txt); }), reduce ? 0 : 1800);
+}
+$('#shockUp').onclick = () => runWhatIf(.2);
+$('#shockDown').onclick = () => runWhatIf(-.2);
+$('#scrub').oninput = e => { if(M.kind!=='data') return; M.seek(+e.target.value); clearPackets(); afterStep(false); };
+
+/* ---------- camera modes ---------- */
+let fly = null;
+const ease = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+function flyTo(pos, target, dur=1300){ fly = {p0:camera.position.clone(), t0:controls.target.clone(), p1:pos, t1:target, s:performance.now(), d: reduce ? 1 : dur}; }
+function focus(id){
+  const b = B[id], gp = b.group.position;
+  let dir = new THREE.Vector3(gp.x,0,gp.z); if(dir.lengthSq()<1) dir = camera.position.clone().setY(0).normalize(); else dir.normalize();
+  const target = new THREE.Vector3(gp.x, b.h*.5+4, gp.z);
+  flyTo(target.clone().add(dir.multiplyScalar(32)).add(new THREE.Vector3(0,17,0)), target);
+}
+function select(id, doFly){
+  const prev = sel; sel = id;
+  if(prev && B[prev]) drawScreen(B[prev]);
+  drawScreen(B[id]);
+  setPanel('inspector', true); renderInspector(); updateShockUi();
+  if(doFly) focus(id);
+}
+const tour = {on:false, i:0, next:0};
+const ride = {on:false, p:null, waitFrom:null};
+function stopModes(){
+  controls.autoRotate = false;
+  if(tour.on){ tour.on = false; $('#tourBtn').setAttribute('aria-pressed','false'); }
+}
+function setRideHud(){
+  const hud = $('#rideHud'), t = $('#rideText'); hud.hidden = !ride.on;
+  if(!ride.on) return;
+  if(ride.p && B[ride.p.edge.from] && B[ride.p.edge.to]){ const e = ride.p.edge; t.innerHTML = `${chip(e.from)} → ${chip(e.to)} <span></span>`; t.lastElementChild.textContent = ' ' + (ride.p.text||e.label); }
+  else t.textContent = ride.waitFrom && M.defs[ride.waitFrom] ? `Arrived at ${M.defs[ride.waitFrom].name}. Waiting for the next dispatch…` : 'Waiting for a packet…';
+}
+function startRide(){
+  stopModes(); ride.on = true; controls.enabled = false; fly = null;
+  const cand = packets.filter(p=>p.u<.4 && p.edge.to!==M.hub);
+  ride.p = cand.length ? cand[Math.floor(rnd()*cand.length)] : null;
+  ride.waitFrom = ride.p ? null : (EDGES.find(e=>e.to!==M.hub) || EDGES[0]).from;
+  $('#rideBtn').setAttribute('aria-pressed','true'); setRideHud();
+}
+function endRide(){
+  ride.on = false; ride.p = null; ride.waitFrom = null; controls.enabled = true;
+  $('#rideBtn').setAttribute('aria-pressed','false'); setRideHud();
+}
+const keys = {};
+addEventListener('keydown', e => {
+  if(e.target.tagName==='INPUT' && e.key!=='Escape') return;
+  if(e.key==='Escape'){ endRide(); stopModes(); return; }
+  const k = e.key.toLowerCase();
+  if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){ keys[k]=true; stopModes(); if(document.activeElement===canvas||document.activeElement===document.body) e.preventDefault(); }
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
+const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _m = new THREE.Vector3(), UP = new THREE.Vector3(0,1,0);
+function updateCamera(dt, now){
+  if(ride.on){
+    if(ride.p){
+      edgePoint(ride.p.edge, ride.p.u, _p, _t);
+      const want = _p.clone().addScaledVector(_t,-7).addScaledVector(UP,3.4);
+      const look = _p.clone().addScaledVector(_t,6).addScaledVector(UP,1.2);
+      const k = 1-Math.exp(-dt*5); camera.position.lerp(want,k); controls.target.lerp(look,k);
+      camera.lookAt(controls.target);
+    }
+    return;
+  }
+  if(fly){
+    const k = Math.min(1,(now-fly.s)/fly.d), e = ease(k);
+    camera.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.t0, fly.t1, e);
+    if(k>=1) fly = null;
+  }
+  if(tour.on && now > tour.next){ const order = [M.hub, ...M.ring]; select(order[tour.i % order.length], true); tour.i++; tour.next = now + 5200; }
+  const f = (keys.w||keys.arrowup?1:0) - (keys.s||keys.arrowdown?1:0), r = (keys.d||keys.arrowright?1:0) - (keys.a||keys.arrowleft?1:0);
+  if(f||r){
+    camera.getWorldDirection(_f); _f.y = 0; _f.normalize(); _r.set(-_f.z,0,_f.x);
+    _m.copy(_f).multiplyScalar(f).addScaledVector(_r,r).multiplyScalar(dt*32);
+    camera.position.add(_m); controls.target.add(_m); fly = null;
+  }
+  controls.update();
+}
+controls.addEventListener('start', () => { stopModes(); fly = null; });
+
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
+function pick(e){ const rect = canvas.getBoundingClientRect(); ndc.set((e.clientX-rect.left)/rect.width*2-1, -(e.clientY-rect.top)/rect.height*2+1); ray.setFromCamera(ndc, camera); return ray.intersectObjects(pickables, false)[0]; }
+canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if(!down || Math.hypot(e.clientX-down[0], e.clientY-down[1]) > 6) return;
+  const hit = pick(e);
+  if(hit && B[hit.object.userData.id]){ if(ride.on) endRide(); stopModes(); select(hit.object.userData.id, true); }
+});
+canvas.addEventListener('pointermove', e => { if(e.buttons) return; canvas.style.cursor = pick(e) ? 'pointer' : 'grab'; });
+
+function updateBuildings(dt, now){
+  for(const id in B){
+    const b = B[id];
+    b.h += (b.targetH - b.h) * (1-Math.exp(-dt*3));
+    b.core.scale.y = b.h;
+    if(b.twin) b.twin.scale.y = b.h*.62;
+    b.extras.forEach(x => x.obj.position.y = b.h + x.off);
+    const top = (b.fixedTop || b.h) + b.topOff;
+    b.beacon.position.y = top;
+    const alarm = status[id] && status[id][0]!=='ok';
+    b.beacon.scale.setScalar(1 + (reduce ? 0 : Math.sin(now/300 + id.length)*.12 + (alarm ? Math.sin(now/120)*.25 : 0)));
+    b.sprite.position.y = top + 6.6;
+    const sc = sel===id ? 1.12 : 1; b.sprite.scale.set(15.5*sc, 8.72*sc, 1);
+    b.pulse = Math.max(0, b.pulse - dt*2.2);
+    b.plaza.material.opacity = .25 + b.pulse*.6 + (sel===id ? .25 : 0);
+    if(b.ring && !reduce) b.ring.rotation.z += dt*.6;
+  }
+}
+
+/* ---------- panels & controls ---------- */
+const narrow = () => innerWidth < 760;
+function setPanel(id, open){
+  const btnFor = x => x==='radio' ? $('#radioBtn') : x==='dock' ? $('#dockBtn') : null;
+  $('#'+id).hidden = !open;
+  if(btnFor(id)) btnFor(id).setAttribute('aria-pressed', String(open));
+  if(open && narrow()) ['inspector','radio','dock'].filter(x=>x!==id).forEach(x=>{ $('#'+x).hidden = true; if(btnFor(x)) btnFor(x).setAttribute('aria-pressed','false'); });
+  if(id==='inspector' && open) requestAnimationFrame(drawChart);
+}
+$('#radioBtn').onclick = () => setPanel('radio', $('#radio').hidden);
+$('#dockBtn').onclick = () => setPanel('dock', $('#dock').hidden);
+$('#iClose').onclick = () => { const p = sel; sel = null; setPanel('inspector', false); if(p && B[p]) drawScreen(B[p]); updateShockUi(); };
+let running = true, speed = 1;
+$('#playBtn').onclick = e => { running = !running; e.currentTarget.textContent = running ? 'Pause' : 'Play'; e.currentTarget.setAttribute('aria-pressed', String(!running)); };
+document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; document.querySelectorAll('[data-speed]').forEach(x=>x.setAttribute('aria-pressed', String(x===b))); });
+$('#tourBtn').onclick = () => { if(tour.on){ stopModes(); return; } endRide(); controls.autoRotate = false; tour.on = true; tour.next = 0; $('#tourBtn').setAttribute('aria-pressed','true'); };
+$('#rideBtn').onclick = () => ride.on ? endRide() : startRide();
+$('#rideExit').onclick = endRide;
+$('#spend').oninput = e => { if(M.kind==='demo') M.set('spend', +e.target.value); $('#spendOut').textContent = `$${e.target.value}k/day`; };
+$('#price').oninput = e => { if(M.kind==='demo') M.set('price', +e.target.value); $('#priceOut').textContent = `$${e.target.value}`; };
+$('#viralBtn').onclick = () => { M.set('viral',8); log('warn','mkt','sales','Viral campaign launched. Expect a lead surge in 2 days.'); updateShockButtons(); };
+$('#delayBtn').onclick = () => { M.set('delay',12); log('warn','ops','inv','Supplier delay. Plant capacity cut to 35%.'); updateShockButtons(); };
+$('#outageBtn').onclick = () => { M.set('outage',4); log('crit','lake','sup','Site outage. Ticket volume surging.'); updateShockButtons(); };
+$('#resetBtn').onclick = () => setModel(makeDemoModel());
+function updateShockButtons(){
+  const s = M.shocks();
+  [['viralBtn','viral','8 days · 2.2× leads'],['delayBtn','delay','12 days · 35% capacity'],['outageBtn','outage','4 days · ticket surge']].forEach(([b,k,def])=>{
+    const el = $('#'+b), on = s[k]>0; el.classList.toggle('on', on); el.querySelector('small').textContent = on ? `${s[k]} day${s[k]>1?'s':''} left` : def;
+  });
+}
+
+function resize(){
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix();
+  document.documentElement.style.setProperty('--barH', ($('#bar').offsetHeight + 4) + 'px');
+  if(sel) drawChart();
+}
+addEventListener('resize', resize);
+
+if(narrow()){ $('#radio').hidden = true; $('#dock').hidden = true; $('#radioBtn').setAttribute('aria-pressed','false'); $('#dockBtn').setAttribute('aria-pressed','false'); }
+setModel(makeDemoModel());
+resize();
+if(document.fonts && document.fonts.load){
+  Promise.all(['600 34px "Chakra Petch"','600 62px "JetBrains Mono"','500 22px "Barlow"'].map(f=>document.fonts.load(f).catch(()=>{})))
+    .then(()=>{ for(const id in B) drawScreen(B[id]); renderInspector(); resize(); });
+}
+if(window.parent !== window){ try { window.parent.postMessage({type:'a5-datacity-ready'}, '*'); } catch(_){} }
+let last = performance.now(), accT = 0;
+function loop(now){
+  const dt = Math.min(.05, (now-last)/1000); last = now;
+  if(running){ accT += dt*speed; let guard = 0; while(accT >= 1 && guard++ < 8){ accT -= 1; tick(); } if(accT > 2) accT = 0; }
+  updatePackets(dt); updateBuildings(dt, now); updateCamera(dt, now);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
